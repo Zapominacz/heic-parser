@@ -1,0 +1,9 @@
+node_modules
+images/*
+!images/.gitkeep
+result/*
+!result/.gitkeep
+dist
+.DS-Store
+public/index.js
+*.pem
