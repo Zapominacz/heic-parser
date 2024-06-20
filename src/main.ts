@@ -1,40 +1,40 @@
 import { encode } from "jpeg-js";
-import * as decode from "heic-decode";
+import decode from "heic-decode";
 
-const convert = async (buffer: Buffer, quality: number) => {
-  const image = await decode({ buffer });
+const convert = async (buffer: ArrayBuffer, quality: number) => {
+  const image = await decode({ buffer: new Uint8Array(buffer) });
   return encode(
     {
       width: image.width,
       height: image.height,
-      data: Buffer.from(image.data),
+      data: image.data,
     },
     quality
   ).data;
 };
 
 const getDragDropOverlay = (document: Document): HTMLDivElement =>
-  document.querySelector(".drag-drop-overlay");
+  document.querySelector(".drag-drop-overlay")!;
 
 const isHeicFile = (file: File): boolean =>
   file.name.toLowerCase().endsWith(".heic");
 
 const getFilesSection = (document: Document): HTMLElement =>
-  document.querySelector("section");
+  document.querySelector("section")!;
 
 const getSliderValue = (document: Document): HTMLSpanElement =>
-  document.querySelector("#qualityValue");
+  document.querySelector("#qualityValue")!;
 
 const registerButtonHandler = (
   document: Document,
   handler: (ev: MouseEvent) => void
-) => (document.querySelector("button").onclick = handler);
+) => (document.querySelector("button")!.onclick = handler);
 
 const getFilesList = (document: Document): HTMLUListElement =>
-  document.querySelector("ul");
+  document.querySelector("ul")!;
 
 const getSlider = (document: Document): HTMLInputElement =>
-  document.querySelector(`input[type="range"]`);
+  document.querySelector(`input[type="range"]`)!;
 
 const registerSliderChangeHandler = (
   document: Document,
@@ -47,7 +47,7 @@ const registerSliderChangeHandler = (
 };
 
 const getCheckbox = (document: Document): HTMLInputElement =>
-  document.querySelector(`input[type="checkbox"]`);
+  document.querySelector(`input[type="checkbox"]`)!;
 
 const createFileEntry =
   (document: Document) =>
@@ -77,7 +77,7 @@ const createDownloadLink = (
 };
 
 const stopDrag = (overlay: HTMLElement) => () => {
-  overlay.style.display = null;
+  overlay.style.display = "initial";
 };
 
 const startDrag = (overlay: HTMLElement) => () => {
@@ -99,8 +99,8 @@ const onFileDrop = (document: Document) => {
   return async (event: DragEvent) => {
     event.preventDefault();
     stopDrag(getDragDropOverlay(document))();
-    getFilesSection(document).style.display = null;
-    const files = Array.from(event.dataTransfer.items)
+    getFilesSection(document).style.display = "initial";
+    const files = <File[]>Array.from(event.dataTransfer?.items ?? [])
       .filter((item) => item.kind === "file")
       .map((item) => item.getAsFile());
     const filesHtmlItems = files.reverse().map(createFileEntry(document));
@@ -109,7 +109,7 @@ const onFileDrop = (document: Document) => {
     heicFiles.forEach(async (file, index) => {
       const fileHtmlItem = filesHtmlItems[index];
       fileHtmlItem.innerText = `"${file.name}" -> Processing`;
-      const buffer = Buffer.from(await file.arrayBuffer());
+      const buffer = await file.arrayBuffer();
       const quality = parseInt(htmlSlider.value, 10) || 80;
       const result = await convert(buffer, quality);
       const downloadLink = createDownloadLink(document, result, file);
