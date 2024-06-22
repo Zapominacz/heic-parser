@@ -1,17 +1,7 @@
-import { encode } from "jpeg-js";
-import decode from "heic-decode";
+import workerUrl from "./worker?worker&url";
 
-const convert = async (buffer: ArrayBuffer, quality: number) => {
-  const image = await decode({ buffer: new Uint8Array(buffer) });
-  return encode(
-    {
-      width: image.width,
-      height: image.height,
-      data: image.data,
-    },
-    quality
-  ).data;
-};
+let currentId = 1;
+const worker = new Worker(workerUrl, { type: "module" });
 
 const getDragDropOverlay = (document: Document): HTMLDivElement =>
   document.querySelector(".drag-drop-overlay")!;
@@ -51,27 +41,22 @@ const getCheckbox = (document: Document): HTMLInputElement =>
 
 const createFileEntry =
   (document: Document) =>
-  (file: File): HTMLLIElement => {
+  (data: HeicFileData): HTMLLIElement => {
     const liElement = document.createElement("li");
-    liElement.innerText = `"${file.name}" -> ${
-      isHeicFile(file) ? "Waiting" : "Not a heic file"
-    }`;
+    liElement.id = `file-${data.id}`;
+    liElement.innerText = `"${data.name}" -> "Waiting"`;
     return liElement;
   };
 
 const createDownloadLink = (
   document: Document,
-  result: ArrayBuffer,
-  file: File
+  downloadUrl: string,
+  name: string
 ): HTMLAnchorElement => {
   const anchorElement = document.createElement("a");
-  const newFileName = file.name.toLowerCase().replace(".heic", ".jpg");
-  anchorElement.innerText = `"${file.name}" -> Download: "${newFileName}"`;
-  anchorElement.href = URL.createObjectURL(
-    new Blob([result], {
-      type: "image/jpeg",
-    })
-  );
+  const newFileName = name.toLowerCase().replace(".heic", ".jpg");
+  anchorElement.innerText = `"${name}" -> Download: "${newFileName}"`;
+  anchorElement.href = downloadUrl;
   anchorElement.download = newFileName;
   return anchorElement;
 };
@@ -88,37 +73,51 @@ const preventDefaultHandler = (event: Event) => {
   event.preventDefault();
 };
 
-// TODO: improve fonts
-// TODO: cookies
-// TODO: file input finish
-
 const onFileDrop = (document: Document) => {
   const htmlFilesList = getFilesList(document);
   const htmlSlider = getSlider(document);
-  const htmlCheckbox = getCheckbox(document);
   return async (event: DragEvent) => {
     event.preventDefault();
     stopDrag(getDragDropOverlay(document))();
     getFilesSection(document).style.display = "initial";
-    const files = <File[]>Array.from(event.dataTransfer?.items ?? [])
+    const quality = parseInt(htmlSlider.value, 10) || 80;
+    const files = Array.from(event.dataTransfer?.items ?? [])
       .filter((item) => item.kind === "file")
-      .map((item) => item.getAsFile());
-    const filesHtmlItems = files.reverse().map(createFileEntry(document));
-    htmlFilesList.prepend(...filesHtmlItems);
-    const heicFiles = files.filter(isHeicFile);
-    heicFiles.forEach(async (file, index) => {
-      const fileHtmlItem = filesHtmlItems[index];
-      fileHtmlItem.innerText = `"${file.name}" -> Processing`;
-      const buffer = await file.arrayBuffer();
-      const quality = parseInt(htmlSlider.value, 10) || 80;
-      const result = await convert(buffer, quality);
-      const downloadLink = createDownloadLink(document, result, file);
-      fileHtmlItem.replaceChildren(downloadLink);
-      if (htmlCheckbox.checked) {
-        downloadLink.click();
-      }
+      .map((item) => <File>item.getAsFile())
+      .filter(isHeicFile)
+      .map(
+        (file) =>
+          ({
+            file,
+            id: currentId++,
+            quality,
+            name: file.name,
+          } satisfies HeicFileData)
+      );
+    htmlFilesList.prepend(...files.reverse().map(createFileEntry(document)));
+    files.forEach(async (data) => {
+      const element = <HTMLLIElement>document.querySelector(`#file-${data.id}`);
+      element.innerText = `"${data.name}" -> Processing`;
+      const input = {
+        name: data.name,
+        id: data.id,
+        quality: data.quality,
+        buffer: await data.file.arrayBuffer(),
+      } satisfies WorkerInputData;
+      worker.postMessage(input, [input.buffer]);
     });
   };
+};
+
+worker.onmessage = (e: MessageEvent<WorkerReturnData>) => {
+  const { downloadUrl, id, name } = e.data;
+  const element = <HTMLLIElement>document.querySelector(`#file-${id}`);
+  element.innerText = `"${name}" -> Processing`;
+  const downloadLink = createDownloadLink(document, downloadUrl, name);
+  element.replaceChildren(downloadLink);
+  if (getCheckbox(document).checked) {
+    downloadLink.click();
+  }
 };
 
 const createDragDrop = (document: Document) => {
